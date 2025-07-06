@@ -111,17 +111,25 @@ async function run() {
 
         // GET: Get user role by email
          app.get('/users/:email/role', async (req, res) => {
-            try {
+         try {
                 const email = req.params.email;
+
+                if (!email) {
+                    return res.status(400).send({ message: 'Email is required' });
+                }
+
                 const user = await usersCollection.findOne({ email });
-                if (!user) return res.status(404).send({ message: 'User not found' });
+
+                if (!user) {
+                    return res.status(404).send({ message: 'User not found' });
+                }
+
                 res.send({ role: user.role || 'user' });
-            } catch (err) {
-                console.error('Role fetch error:', err);
-                res.status(500).send({ message: 'Failed to fetch role' });
+            } catch (error) {
+                console.error('Error getting user role:', error);
+                res.status(500).send({ message: 'Failed to get role' });
             }
         });
-
        app.post('/users', async (req, res) => {
             try {
                 const { email, name, photoURL } = req.body;
@@ -519,6 +527,53 @@ async function run() {
                 res.status(500).send({ message: "Failed to update rider status" });
             }
         });
+//rider dashboard
+app.get("/rider-dashboard-stats", verifyFBToken, verifyRider, async (req, res) => {
+    try {
+        const email = req.decoded.email;
+
+        // Get rider profile info
+        const rider = await ridersCollection.findOne({ email });
+
+        // Count assigned parcels
+        const totalAssigned = await parcelsCollection.countDocuments({
+            assigned_rider_email: email,
+        });
+
+        // Count in-transit parcels
+        const inTransit = await parcelsCollection.countDocuments({
+            assigned_rider_email: email,
+            delivery_status: "in_transit",
+        });
+
+        // Count delivered parcels
+        const delivered = await parcelsCollection.countDocuments({
+            assigned_rider_email: email,
+            delivery_status: "delivered",
+        });
+
+        // Sum total earnings from delivered parcels (optional: adjust field names)
+        const deliveredParcels = await parcelsCollection.find({
+            assigned_rider_email: email,
+            delivery_status: "delivered",
+        }).toArray();
+
+        const totalEarnings = deliveredParcels.reduce((acc, parcel) => {
+            return acc + (parcel.delivery_fee || 0);
+        }, 0);
+
+        res.send({
+            rider,
+            totalAssigned,
+            inTransit,
+            delivered,
+            totalEarnings,
+        });
+    } catch (error) {
+        console.error("Error getting rider dashboard stats:", error);
+        res.status(500).send({ message: "Failed to get rider dashboard stats" });
+    }
+});
 
 
         app.post("/tracking", async (req, res) => {
@@ -533,7 +588,7 @@ async function run() {
                 updated_by,
             };
 
-            const result = await trackingCollection.insertOne(log);
+            const result = await trackingsCollection.insertOne(log);
             res.send({ success: true, insertedId: result.insertedId });
         });
 
